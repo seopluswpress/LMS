@@ -65,11 +65,44 @@ const authMiddleware = async (req, res, next) => {
 
 // Register user
 app.post('/api/register', async (req, res) => {
-  const { username, email, password } = req.body;
-  const hashed = await bcrypt.hash(password, 10);
-  const user = await User.create({ username, email, password: hashed,role: role || 'user'});
-  res.json({ message: 'User created', userId: user._id });
+  try {
+    const { username, email, password, role } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+
+    // Hash password
+    const hashed = await bcrypt.hash(password, 10);
+
+    // Create user with role (default to 'user')
+    const user = await User.create({
+      username,
+      email,
+      password: hashed,
+      role: role || 'user',
+    });
+
+    // Generate JWT including id and role
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Send token and user info to frontend
+    res.json({
+      message: 'User created',
+      token,
+      user: { id: user._id, username: user.username, email: user.email, role: user.role },
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 });
+
 
 // Login user
 app.post('/api/login', async (req, res) => {
