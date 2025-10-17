@@ -147,6 +147,7 @@ app.get('/api/courses', authMiddleware, async (req, res) => {
   res.json(courses);
 });
 
+
 // Secure video proxy endpoint
 app.get('/api/video/:courseId', authMiddleware, async (req, res) => {
   const course = await Course.findById(req.params.courseId);
@@ -182,6 +183,26 @@ app.delete('/api/courses/:id', authMiddleware, async (req, res) => {
     res.json({ message: 'Course deleted successfully' });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+app.get('/api/courses', authMiddleware, async (req, res) => {
+  const courses = await Course.find();
+  res.json(courses);
+});
+
+// --- ADD THIS NEW ROUTE ---
+// Get a single course by ID
+app.get('/api/courses/:id', authMiddleware, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    res.json(course);
+  } catch (error) {
+    console.error('Error fetching course by ID:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
