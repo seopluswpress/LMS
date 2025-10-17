@@ -8,10 +8,25 @@ import dotenv from 'dotenv';
 dotenv.config();
 const app = express();
 app.use(express.json());
+// Define the allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:3000', // Your local frontend
+  'https://your-deployed-frontend-url.com' // IMPORTANT: Replace with your actual frontend URL when you deploy it
+];
+
 app.use(cors({
-  origin: 'http://localhost:3000', // allow this origin
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true, // if you use cookies
+  credentials: true,
 }));
 
 // ======================
