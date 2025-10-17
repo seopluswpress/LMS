@@ -134,6 +134,39 @@ app.post('/api/login', async (req, res) => {
   res.json({ token });
 });
 
+// --- ADD THIS NEW ROUTE ---
+// Enroll in a course
+app.post('/api/enroll', authMiddleware, async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    const user = req.user;
+
+    if (!courseId) {
+      return res.status(400).json({ message: 'Course ID is required.' });
+    }
+    
+    // Check if the course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found.' });
+    }
+
+    // Check if user is already enrolled
+    if (user.courses.includes(courseId)) {
+      return res.status(400).json({ message: 'Already enrolled in this course.' });
+    }
+
+    user.courses.push(courseId);
+    await user.save();
+
+    res.json({ message: 'Enrolled successfully.', courses: user.courses });
+
+  } catch (error) {
+    console.error('Enrollment error:', error);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
+});
+
 // Add course (admin)
 app.post('/api/courses', authMiddleware, async (req, res) => {
   const { title, youtubeUrl, description } = req.body;
