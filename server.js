@@ -41,10 +41,15 @@ const userSchema = new mongoose.Schema({
   courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
 });
 
+const sectionSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  youtubeUrl: { type: String, required: true },
+});
+
 const courseSchema = new mongoose.Schema({
-  title: String,
-  youtubeUrl: String,
-  description: String,
+  title: { type: String, required: true },
+  sections: [sectionSchema], // array of sections
+  description: { type: String }, // description for the whole course
 });
 
 const courseHistorySchema = new mongoose.Schema({
