@@ -50,6 +50,7 @@ const courseSchema = new mongoose.Schema({
   title: { type: String, required: true },
   sections: [sectionSchema], // array of sections
   description: { type: String }, // description for the whole course
+  is_published: { type: Boolean, default: false },
 });
 
 const courseHistorySchema = new mongoose.Schema({
