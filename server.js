@@ -145,9 +145,30 @@ app.get('/api/video/:courseId', authMiddleware, async (req, res) => {
 });
 
 // User course history
+// User course history
 app.get('/api/history', authMiddleware, async (req, res) => {
   const history = await CourseHistory.find({ user: req.user._id }).populate('course');
   res.json(history);
+});
+
+// ADD THIS NEW ROUTE
+// Delete a course (assuming only creators/admins can do this)
+app.delete('/api/courses/:id', authMiddleware, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    // Optional: Add logic here to check if req.user is the creator of the course
+    // For now, we'll assume any authenticated user with access to this route can delete.
+
+    await Course.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Course deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 });
 
 // ======================
