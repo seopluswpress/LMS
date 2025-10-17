@@ -174,11 +174,20 @@ app.post('/api/enroll', authMiddleware, async (req, res) => {
 });
 
 // Add course (admin)
-app.post('/api/courses', authMiddleware, async (req, res) => {
-  const { title, youtubeUrl, description } = req.body;
-  const course = await Course.create({ title, youtubeUrl, description });
-  res.json(course);
+app.post('/api/courses', async (req, res) => {
+  try {
+    console.log("Received body:", req.body); // Quick test
+
+    const course = new Course(req.body);
+    await course.save();
+
+    res.status(201).json(course);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  }
 });
+
 
 // List courses
 app.get('/api/courses', authMiddleware, async (req, res) => {
