@@ -303,6 +303,26 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
+app.patch('/api/courses/:id/unpublish', authMiddleware  , async (req, res) => {
+  try {
+    const { is_published } = req.body;
+    
+    const course = await Course.findByIdAndUpdate(
+      req.params.id,
+      { is_published },
+      { new: false }
+    )
+
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    res.json({ message: 'Course status updated successfully', course });
+  } catch (error) {
+    console.error('Error updating course status:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // --- User Routes ---
 //  NEW: Get all users (Admin only)
 app.get('/api/users', authMiddleware, async (req, res) => {
