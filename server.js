@@ -283,6 +283,42 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
+  app.patch('/api/courses/:id/publish', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { is_published } = req.body;
+    if (typeof is_published !== 'boolean') {
+      return res.status(400).json({ message: 'is_published must be a boolean.' });
+    }
+    
+    const course = await Course.findByIdAndUpdate(
+      req.params.id,
+      { is_published },
+      { new: true }
+    ).populate('creator', 'username email');
+
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+    res.json({ message: 'Course status updated successfully', course });
+  } catch (error) {
+    console.error('Error updating course status:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// --- User Routes ---
+//  NEW: Get all users (Admin only)
+app.get('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    // .select('-password') prevents the hashed password from being sent to the frontend
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // ======================
 // Connect MongoDB & Start
 // ======================
