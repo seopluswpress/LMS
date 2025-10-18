@@ -286,9 +286,6 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   app.patch('/api/courses/:id/publish', authMiddleware  , async (req, res) => {
   try {
     const { is_published } = req.body;
-    if (typeof is_published !== 'boolean') {
-      return res.status(400).json({ message: 'is_published must be a boolean.' });
-    }
     
     const course = await Course.findByIdAndUpdate(
       req.params.id,
