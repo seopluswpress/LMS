@@ -188,6 +188,34 @@ app.post('/api/courses', async (req, res) => {
   }
 });
 
+// Update a course
+app.put('/api/courses/:id', authMiddleware, async (req, res) => {
+  try {
+    const { title, description, sections } = req.body;
+
+    const course = await Course.findById(req.params.id);
+    if (!course) {
+      return res.status(404).json({ message: 'Course not found' });
+    }
+
+    // Optional: ensure only admin/educator can edit
+    if (req.user.role !== 'admin' && req.user.role !== 'educator') {
+      return res.status(403).json({ message: 'Permission denied' });
+    }
+
+    course.title = title || course.title;
+    course.description = description || course.description;
+    course.sections = sections || course.sections;
+
+    await course.save();
+    res.json({ message: 'Course updated successfully', course });
+  } catch (error) {
+    console.error('Error updating course:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
 
 // List courses
 app.get('/api/courses', authMiddleware, async (req, res) => {
