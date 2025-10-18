@@ -308,7 +308,7 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
 
 // --- User Routes ---
 //  NEW: Get all users (Admin only)
-app.get('/api/users', authMiddleware, adminMiddleware, async (req, res) => {
+app.get('/api/users', authMiddleware, async (req, res) => {
   try {
     // .select('-password') prevents the hashed password from being sent to the frontend
     const users = await User.find().select('-password');
