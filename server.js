@@ -283,7 +283,7 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
-  app.patch('/api/courses/:id/publish', authMiddleware, adminMiddleware, async (req, res) => {
+  app.patch('/api/courses/:id/publish', authMiddleware  , async (req, res) => {
   try {
     const { is_published } = req.body;
     if (typeof is_published !== 'boolean') {
