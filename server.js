@@ -291,7 +291,7 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
       req.params.id,
       { is_published },
       { new: true }
-    ).populate('educator', 'username email');
+    )
 
     if (!course) {
       return res.status(404).json({ message: 'Course not found' });
