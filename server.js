@@ -44,6 +44,7 @@ const userSchema = new mongoose.Schema({
 const sectionSchema = new mongoose.Schema({
   title: { type: String, required: true },
   youtubeUrl: { type: String, required: true },
+  context: { type: String, default: '' },
 });
 
 const courseSchema = new mongoose.Schema({
