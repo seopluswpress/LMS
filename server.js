@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 const app = express();
@@ -86,45 +87,65 @@ const authMiddleware = async (req, res, next) => {
 // Routes
 // ======================
 
-import nodemailer from 'nodemailer';
+
 
 // Register user
+
+
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
+    console.log('📩 Incoming registration:', { username, email, role });
 
-    // Check if user already exists
+    // Step 1: Check if user exists
     const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+    if (existingUser) {
+      console.log('⚠️ User already exists:', email);
+      return res.status(400).json({ message: 'User already exists' });
+    }
 
-    // Hash password
+    // Step 2: Hash password
     const hashed = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Step 3: Create user
     const user = await User.create({
       username: username || email.split('@')[0],
       email,
       password: hashed,
       role: role || 'user',
     });
+    console.log('✅ User created in MongoDB:', user.email);
 
-    // Generate JWT
+    // Step 4: Generate token
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // ======= EMAIL CONFIGURATION =======
+    // Step 5: Email configuration debug
+    console.log('📧 Preparing email using Gmail transporter...');
+    console.log('ENV Email user:', process.env.EMAIL_USER);
+    console.log('ENV Frontend URL:', process.env.FRONTEND_URL);
+
     const transporter = nodemailer.createTransport({
-      service: 'gmail', // works well for small setups — or use custom SMTP
+      service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
     });
 
+    // Verify the transporter before sending
+    await transporter.verify()
+      .then(() => console.log('✅ Email transporter verified successfully'))
+      .catch(err => {
+        console.error('❌ Transporter verification failed:', err);
+        throw new Error('Email transporter verification failed');
+      });
+
     const loginUrl = `${process.env.FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
+    console.log('🔗 Generated Login URL:', loginUrl);
 
     const mailOptions = {
       from: `"SMBJugaad LMS" <${process.env.EMAIL_USER}>`,
@@ -148,11 +169,13 @@ app.post('/api/register', async (req, res) => {
       `,
     };
 
-    // Send the email
-    await transporter.sendMail(mailOptions);
-    console.log(`📧 Registration email sent to ${email}`);
+    console.log('📤 Sending email to:', email);
 
-    // Send success response
+    // Step 6: Send email
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Registration email sent successfully to ${email}`);
+
+    // Step 7: Respond success
     res.json({
       message: 'User registered successfully and email sent',
       token,
@@ -160,10 +183,11 @@ app.post('/api/register', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error during registration:', error);
+    console.error('💥 Error during registration:', error);
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
+
 
 
 
