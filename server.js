@@ -86,6 +86,8 @@ const authMiddleware = async (req, res, next) => {
 // Routes
 // ======================
 
+import nodemailer from 'nodemailer';
+
 // Register user
 app.post('/api/register', async (req, res) => {
   try {
@@ -98,33 +100,71 @@ app.post('/api/register', async (req, res) => {
     // Hash password
     const hashed = await bcrypt.hash(password, 10);
 
-    // Create user with role (default to 'user')
+    // Create user
     const user = await User.create({
-      username,
+      username: username || email.split('@')[0],
       email,
       password: hashed,
       role: role || 'user',
     });
 
-    // Generate JWT including id and role
+    // Generate JWT
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Send token and user info to frontend
+    // ======= EMAIL CONFIGURATION =======
+    const transporter = nodemailer.createTransport({
+      service: 'gmail', // works well for small setups — or use custom SMTP
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const loginUrl = `${process.env.FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
+
+    const mailOptions = {
+      from: `"SMBJugaad LMS" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Welcome to SMBJugaad LMS 🎉',
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333;">
+          <h2>Welcome to SMBJugaad LMS, ${user.username}!</h2>
+          <p>We’re excited to have you on board.</p>
+          <p>You can now log in to start exploring your courses:</p>
+          <a href="${loginUrl}"
+             style="display:inline-block;background:#4f46e5;color:white;text-decoration:none;
+                    padding:10px 20px;border-radius:6px;font-weight:600;">
+             Log in to SMBJugaad
+          </a>
+          <p>If the button doesn’t work, copy and paste this link in your browser:</p>
+          <p style="color:#555;">${loginUrl}</p>
+          <hr/>
+          <p style="font-size:12px;color:#999;">© ${new Date().getFullYear()} SMBJugaad LMS</p>
+        </div>
+      `,
+    };
+
+    // Send the email
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Registration email sent to ${email}`);
+
+    // Send success response
     res.json({
-      message: 'User created',
+      message: 'User registered successfully and email sent',
       token,
       user: { id: user._id, username: user.username, email: user.email, role: user.role },
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Error during registration:', error);
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
+
 
 
 // Login user
