@@ -12,7 +12,9 @@ app.use(express.json());
 // Define the allowed origins for CORS
 const allowedOrigins = [
   'http://localhost:3000', // Your local frontend
-  'https://your-deployed-frontend-url.com' // IMPORTANT: Replace with your actual frontend URL when you deploy it
+  'https://your-deployed-frontend-url.com', // IMPORTANT: Replace with your actual frontend URL when you deploy it
+  'http://localhost:5173',
+  'https://smbjugaad.com'
 ];
 
 app.use(cors({
