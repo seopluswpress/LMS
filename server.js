@@ -136,6 +136,9 @@ app.post('/api/register', async (req, res) => {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
+      tls: {
+    rejectUnauthorized: false // Add this for some hosting environments
+  },
     });
 
     // Verify the transporter before sending
