@@ -125,59 +125,14 @@ app.post('/api/register', async (req, res) => {
       { expiresIn: '1h' }
     );
 
-    // Step 5: Setup SMTP transporter (Render-friendly)
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_PORT == 465, // true for 465, false for 587
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-      tls: {
-        rejectUnauthorized: false, // some hosting environments need this
-      },
+    // Step 5: Send email (non-blocking)
+    sendWelcomeEmail(user.email, user.username).catch(err => {
+      console.error('❌ Email sending failed (non-blocking):', err.message);
     });
 
-    await transporter.verify()
-      .then(() => console.log('✅ SMTP transporter verified successfully'))
-      .catch(err => {
-        console.error('❌ SMTP verification failed:', err);
-        throw new Error('SMTP transporter verification failed');
-      });
-
-    const loginUrl = `${process.env.FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
-    console.log('🔗 Generated Login URL:', loginUrl);
-
-    const mailOptions = {
-      from: `"SMBJugaad LMS" <${process.env.SMTP_USER}>`,
-      to: email,
-      subject: 'Welcome to SMBJugaad LMS 🎉',
-      html: `
-        <div style="font-family: Arial, sans-serif; color: #333;">
-          <h2>Welcome to SMBJugaad LMS, ${user.username}!</h2>
-          <p>We’re excited to have you on board.</p>
-          <p>You can now log in to start exploring your courses:</p>
-          <a href="${loginUrl}"
-             style="display:inline-block;background:#4f46e5;color:white;text-decoration:none;
-                    padding:10px 20px;border-radius:6px;font-weight:600;">
-             Log in to SMBJugaad
-          </a>
-          <p>If the button doesn’t work, copy and paste this link in your browser:</p>
-          <p style="color:#555;">${loginUrl}</p>
-          <hr/>
-          <p style="font-size:12px;color:#999;">© ${new Date().getFullYear()} SMBJugaad LMS</p>
-        </div>
-      `,
-    };
-
-    console.log('📤 Sending email to:', email);
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Registration email sent successfully to ${email}`);
-
-    // Step 6: Respond success
+    // Step 6: Respond success immediately (don't wait for email)
     res.json({
-      message: 'User registered successfully and email sent',
+      message: 'User registered successfully',
       token,
       user: { id: user._id, username: user.username, email: user.email, role: user.role },
     });
@@ -188,6 +143,58 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+// Separate email sending function with timeout and retry logic
+async function sendWelcomeEmail(email, username) {
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_PORT == 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  const loginUrl = `${process.env.FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
+
+  const mailOptions = {
+    from: `"SMBJugaad LMS" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: 'Welcome to SMBJugaad LMS 🎉',
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #333;">
+        <h2>Welcome to SMBJugaad LMS, ${username}!</h2>
+        <p>We're excited to have you on board.</p>
+        <p>You can now log in to start exploring your courses:</p>
+        <a href="${loginUrl}"
+           style="display:inline-block;background:#4f46e5;color:white;text-decoration:none;
+                  padding:10px 20px;border-radius:6px;font-weight:600;">
+           Log in to SMBJugaad
+        </a>
+        <p>If the button doesn't work, copy and paste this link in your browser:</p>
+        <p style="color:#555;">${loginUrl}</p>
+        <hr/>
+        <p style="font-size:12px;color:#999;">© ${new Date().getFullYear()} SMBJugaad LMS</p>
+      </div>
+    `,
+  };
+
+  console.log('📤 Attempting to send email to:', email);
+  
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Welcome email sent successfully to ${email}`);
+  } catch (error) {
+    console.error(`❌ Failed to send email to ${email}:`, error.message);
+    throw error;
+  }
+}
 
 
 
