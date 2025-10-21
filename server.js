@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
+import axios from 'axios';
 
 dotenv.config();
 const app = express();
@@ -12,9 +13,7 @@ app.use(express.json());
 // Define the allowed origins for CORS
 const allowedOrigins = [
   'http://localhost:3000', // Your local frontend
-  'https://your-deployed-frontend-url.com', // IMPORTANT: Replace with your actual frontend URL when you deploy it
-  'http://localhost:5173',
-  'https://smbjugaad.com'
+  'https://your-deployed-frontend-url.com' // IMPORTANT: Replace with your actual frontend URL when you deploy it
 ];
 
 app.use(cors({
@@ -91,111 +90,132 @@ const authMiddleware = async (req, res, next) => {
 
 
 
-// Register user
+// Register user // Make sure axios is imported at the top of your file
 
+// ... (keep all your other imports and schema definitions) ...
+
+
+// =========================================================================
+//  NEW HELPER FUNCTION TO CALL THE PYTHON EMAIL SERVICE
+// =========================================================================
+/**
+ * A non-blocking function to trigger the external Python email service.
+ * It includes robust error logging for easy debugging.
+ * @param {string} email - The recipient's email address.
+ * @param {string} username - The recipient's username.
+ */
+async function triggerWelcomeEmail(email, username) {
+  // Check if the required environment variables are configured
+  if (!process.env.PYTHON_EMAIL_SERVICE_URL || !process.env.INTERNAL_API_KEY) {
+    console.error('❌ Email service environment variables (PYTHON_EMAIL_SERVICE_URL or INTERNAL_API_KEY) are not set. Skipping email dispatch.');
+    return;
+  }
+
+  console.log(`➡️  Dispatching welcome email task to Python service for: ${email}`);
+  
+  try {
+    // Make a POST request to the Python service
+    const response = await axios.post(
+      process.env.PYTHON_EMAIL_SERVICE_URL, // The URL of your deployed Python app
+      {
+        // The JSON payload that the FastAPI service expects
+        email: email,
+        username: username,
+      },
+      {
+        // The headers, including the secret key for authentication
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-api-key': process.env.INTERNAL_API_KEY,
+        },
+        // Set a reasonable timeout to prevent hanging requests
+        timeout: 10000, // 10 seconds
+      }
+    );
+    
+    console.log(`✅ Python service accepted the email task for ${email}. Response:`, response.data.message);
+
+  } catch (error) {
+    // This detailed error logging is crucial for figuring out what went wrong
+    console.error(`❌❌ CRITICAL: Failed to dispatch email task for ${email}. Error:`, error.message);
+    if (error.response) {
+      // The Python service responded with an error (e.g., 401 Unauthorized, 500 Server Error)
+      console.error('Error Details from Python Service:', error.response.data);
+      console.error('HTTP Status from Python Service:', error.response.status);
+    } else if (error.request) {
+      // The request was made but no response was received (e.g., timeout, service is down)
+      console.error('No response received from the email service. It might be down or unreachable.');
+    } else {
+      // Something else went wrong in setting up the request
+      console.error('Axios request setup error:', error.message);
+    }
+    // We do NOT throw an error here, as user registration has already succeeded.
+    // This is a background task failure.
+  }
+}
+
+
+// =========================================================================
+//  UPDATED USER REGISTRATION ROUTE
+// =========================================================================
 
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
     console.log('📩 Incoming registration:', { username, email, role });
 
-    // Step 1: Check if user exists
+    // Step 1: Check if user exists (Unchanged)
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       console.log('⚠️ User already exists:', email);
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Step 2: Hash password
+    // Step 2: Hash password (Unchanged)
     const hashed = await bcrypt.hash(password, 10);
 
-    // Step 3: Create user
-    const user = await User.create({
+    // Step 3: Create user in the database (Unchanged)
+    const newUser = await User.create({
       username: username || email.split('@')[0],
       email,
       password: hashed,
       role: role || 'user',
     });
-    console.log('✅ User created in MongoDB:', user.email);
+    console.log('✅ User created in MongoDB:', newUser.email);
 
-    // Step 4: Generate token
+    // Step 4: Generate JWT token (Unchanged)
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      { id: newUser._id, role: newUser.role },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Step 5: Send email (non-blocking)
-    sendWelcomeEmail(user.email, user.username).catch(err => {
-      console.error('❌ Email sending failed (non-blocking):', err.message);
-    });
-
-    // Step 6: Respond success immediately (don't wait for email)
-    res.json({
+    // Step 5: Respond to the client IMMEDIATELY. This makes the registration feel instant.
+    // We use status 201 "Created" which is more accurate for a registration.
+    res.status(201).json({
       message: 'User registered successfully',
       token,
-      user: { id: user._id, username: user.username, email: user.email, role: user.role },
+      user: { id: newUser._id, username: newUser.username, email: newUser.email, role: newUser.role },
     });
 
+    // --- POST-RESPONSE TASK ---
+    // Step 6: Trigger the welcome email via the Python service in the background.
+    // We do NOT use `await` here. This is a "fire-and-forget" call.
+    // The .catch() prevents a potential unhandled promise rejection from crashing the server.
+    triggerWelcomeEmail(newUser.email, newUser.username)
+        .catch(err => {
+            // The error is already logged in detail inside the helper function.
+            // This just confirms the non-blocking task finished with an error.
+            console.error("Non-blocking email dispatch process completed with an error.");
+        });
+
   } catch (error) {
-    console.error('💥 Error during registration:', error);
-    res.status(500).json({ message: 'Internal server error', error: error.message });
+    console.error('💥 Critical error during registration process:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: 'Internal server error', error: error.message });
+    }
   }
 });
-
-// Separate email sending function with timeout and retry logic
-async function sendWelcomeEmail(email, username) {
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_PORT == 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
-
-  const loginUrl = `${process.env.FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
-
-  const mailOptions = {
-    from: `"SMBJugaad LMS" <${process.env.SMTP_USER}>`,
-    to: email,
-    subject: 'Welcome to SMBJugaad LMS 🎉',
-    html: `
-      <div style="font-family: Arial, sans-serif; color: #333;">
-        <h2>Welcome to SMBJugaad LMS, ${username}!</h2>
-        <p>We're excited to have you on board.</p>
-        <p>You can now log in to start exploring your courses:</p>
-        <a href="${loginUrl}"
-           style="display:inline-block;background:#4f46e5;color:white;text-decoration:none;
-                  padding:10px 20px;border-radius:6px;font-weight:600;">
-           Log in to SMBJugaad
-        </a>
-        <p>If the button doesn't work, copy and paste this link in your browser:</p>
-        <p style="color:#555;">${loginUrl}</p>
-        <hr/>
-        <p style="font-size:12px;color:#999;">© ${new Date().getFullYear()} SMBJugaad LMS</p>
-      </div>
-    `,
-  };
-
-  console.log('📤 Attempting to send email to:', email);
-  
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Welcome email sent successfully to ${email}`);
-  } catch (error) {
-    console.error(`❌ Failed to send email to ${email}:`, error.message);
-    throw error;
-  }
-}
-
 
 
 
