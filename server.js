@@ -14,6 +14,7 @@ app.use(express.json());
 const allowedOrigins = [
   'http://localhost:3000', // Your local frontend
   'https://your-deployed-frontend-url.com' // IMPORTANT: Replace with your actual frontend URL when you deploy it
+  'http://localhost:5173'
 ];
 
 app.use(cors({
