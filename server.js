@@ -6,6 +6,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
+import crypto from 'crypto';
+
 
 dotenv.config();
 const app = express();
@@ -13,8 +15,7 @@ app.use(express.json());
 // Define the allowed origins for CORS
 const allowedOrigins = [
   'http://localhost:3000', // Your local frontend
-  'https://your-deployed-frontend-url.com', // IMPORTANT: Replace with your actual frontend URL when you deploy it
-  'http://localhost:5173'
+  'https://your-deployed-frontend-url.com' // IMPORTANT: Replace with your actual frontend URL when you deploy it
 ];
 
 app.use(cors({
@@ -40,9 +41,12 @@ const userSchema = new mongoose.Schema({
   username: String,
   email: String,
   password: String,
-  role:String,
+  role: String,
   courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
 });
+
 
 const sectionSchema = new mongoose.Schema({
   title: { type: String, required: true },
@@ -233,6 +237,81 @@ app.post('/api/login', async (req, res) => {
 
   res.json({ token });
 });
+
+//Request password reset
+app.post('/api/request-password-reset', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({ message: 'No account with that email found.' });
+    }
+
+    // Generate secure token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // Set token and expiry (1 hour)
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+
+    // Construct reset URL
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    console.log(`🔗 Password reset link for ${email}: ${resetUrl}`);
+
+    // Option 1: Use Python service
+    if (process.env.PYTHON_EMAIL_SERVICE_URL) {
+      await axios.post(
+        process.env.PYTHON_EMAIL_SERVICE_URL,
+        { email, username: user.username, reset_url: resetUrl },
+        { headers: { 'x-internal-api-key': process.env.INTERNAL_API_KEY } }
+      );
+    } else {
+      console.log('⚠️ No Python email service configured — email not sent.');
+    }
+
+    res.json({ message: 'Password reset link sent to your email.' });
+  } catch (error) {
+    console.error('Error in request-password-reset:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Reset password
+app.post('/api/reset-password/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    // Find user with valid token and unexpired time
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }, // still valid
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired token.' });
+    }
+
+    // Hash new password
+    const hashed = await bcrypt.hash(password, 10);
+
+    // Update user password and clear token fields
+    user.password = hashed;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Password updated successfully.' });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+
 
 // --- ADD THIS NEW ROUTE ---
 // Enroll in a course
