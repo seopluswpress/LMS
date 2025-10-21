@@ -125,35 +125,32 @@ app.post('/api/register', async (req, res) => {
       { expiresIn: '1h' }
     );
 
-    // Step 5: Email configuration debug
-    console.log('📧 Preparing email using Gmail transporter...');
-    console.log('ENV Email user:', process.env.EMAIL_USER);
-    console.log('ENV Frontend URL:', process.env.FRONTEND_URL);
-
+    // Step 5: Setup SMTP transporter (Render-friendly)
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_PORT == 465, // true for 465, false for 587
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
       },
       tls: {
-    rejectUnauthorized: false // Add this for some hosting environments
-  },
+        rejectUnauthorized: false, // some hosting environments need this
+      },
     });
 
-    // Verify the transporter before sending
     await transporter.verify()
-      .then(() => console.log('✅ Email transporter verified successfully'))
+      .then(() => console.log('✅ SMTP transporter verified successfully'))
       .catch(err => {
-        console.error('❌ Transporter verification failed:', err);
-        throw new Error('Email transporter verification failed');
+        console.error('❌ SMTP verification failed:', err);
+        throw new Error('SMTP transporter verification failed');
       });
 
     const loginUrl = `${process.env.FRONTEND_URL}/login?email=${encodeURIComponent(email)}`;
     console.log('🔗 Generated Login URL:', loginUrl);
 
     const mailOptions = {
-      from: `"SMBJugaad LMS" <${process.env.EMAIL_USER}>`,
+      from: `"SMBJugaad LMS" <${process.env.SMTP_USER}>`,
       to: email,
       subject: 'Welcome to SMBJugaad LMS 🎉',
       html: `
@@ -175,12 +172,10 @@ app.post('/api/register', async (req, res) => {
     };
 
     console.log('📤 Sending email to:', email);
-
-    // Step 6: Send email
     await transporter.sendMail(mailOptions);
     console.log(`✅ Registration email sent successfully to ${email}`);
 
-    // Step 7: Respond success
+    // Step 6: Respond success
     res.json({
       message: 'User registered successfully and email sent',
       token,
@@ -192,6 +187,7 @@ app.post('/api/register', async (req, res) => {
     res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
+
 
 
 
