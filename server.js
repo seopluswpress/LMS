@@ -246,7 +246,9 @@ app.post('/api/request-password-reset', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(400).json({ message: 'No account with that email found.' });
+      // It's better not to reveal if an email exists for security reasons
+      console.log(`⚠️ Password reset request for non-existent email: ${email}`);
+      return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
     }
 
     // Generate secure token
@@ -262,22 +264,51 @@ app.post('/api/request-password-reset', async (req, res) => {
 
     console.log(`🔗 Password reset link for ${email}: ${resetUrl}`);
 
-    // Option 1: Use Python service
-    if (process.env.PYTHON_EMAIL_SERVICE_URL) {
-      await axios.post(
-  `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-password-reset-email`,
-  { email: user.email, username: user.username, reset_url: resetUrl },
-  { headers: { 'x-internal-api-key': process.env.INTERNAL_API_KEY,
-             'Content-Type': 'application/json',} }
-);
-
+    // --- START OF THE FIX ---
+    // Use the robust Python service call with detailed error logging
+    if (process.env.PYTHON_EMAIL_SERVICE_URL && process.env.INTERNAL_API_KEY) {
+      console.log(`➡️  Dispatching password reset email task to Python service for: ${email}`);
+      try {
+        await axios.post(
+          `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-password-reset-email`,
+          {
+            email: user.email,
+            username: user.username,
+            reset_url: resetUrl
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'x-internal-api-key': process.env.INTERNAL_API_KEY
+            },
+            timeout: 10000 // 10 seconds
+          }
+        );
+        console.log(`✅ Python service accepted the password reset task for ${email}.`);
+      } catch (error) {
+        // This is the CRITICAL part. It will tell you exactly what is wrong.
+        console.error(`❌❌ CRITICAL: Failed to dispatch password reset email for ${email}. Error:`, error.message);
+        if (error.response) {
+          console.error('Error Details from Python Service:', error.response.data);
+          console.error('HTTP Status from Python Service:', error.response.status);
+        } else if (error.request) {
+          console.error('No response received from the email service. It might be down or unreachable.');
+        } else {
+          console.error('Axios request setup error:', error.message);
+        }
+        // We still continue and don't tell the user it failed for security.
+      }
     } else {
       console.log('⚠️ No Python email service configured — email not sent.');
     }
+    // --- END OF THE FIX ---
 
-    res.json({ message: 'Password reset link sent to your email.' });
+    // Send a generic success message regardless of whether the email dispatch worked
+    // to prevent user enumeration attacks.
+    res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+
   } catch (error) {
-    console.error('Error in request-password-reset:', error);
+    console.error('Error in top-level request-password-reset logic:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
