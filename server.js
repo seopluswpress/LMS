@@ -122,7 +122,7 @@ async function triggerWelcomeEmail(email, username) {
   try {
     // Make a POST request to the Python service
     const response = await axios.post(
-      `${process.env.PYTHON_EMAIL_SERVICE_URL.replace(/\/$/, '')}//send-welcome-email`, // The URL of your deployed Python app
+      `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-welcome-email`, // The URL of your deployed Python app
       {
         // The JSON payload that the FastAPI service expects
         email: email,
@@ -265,7 +265,7 @@ app.post('/api/request-password-reset', async (req, res) => {
     // Option 1: Use Python service
     if (process.env.PYTHON_EMAIL_SERVICE_URL) {
       await axios.post(
-  `${process.env.PYTHON_EMAIL_SERVICE_URL.replace(/\/$/, '')}/send-password-reset-email`,
+  `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-password-reset-email`,
   { email, username: user.username, reset_url: resetUrl },
   { headers: { 'x-internal-api-key': process.env.INTERNAL_API_KEY } }
 );
