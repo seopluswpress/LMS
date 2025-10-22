@@ -16,7 +16,7 @@ app.use(express.json());
 const allowedOrigins = [
   'http://localhost:3000', // Your local frontend
   'http://localhost:5173',
-  'https://smb-lms.vercel.app/' // IMPORTANT: Replace with your actual frontend URL when you deploy it
+  'https://smb-lms.vercel.app' // IMPORTANT: Replace with your actual frontend URL when you deploy it
 ];
 
 app.use(cors({
