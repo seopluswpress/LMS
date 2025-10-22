@@ -122,7 +122,7 @@ async function triggerWelcomeEmail(email, username) {
   try {
     // Make a POST request to the Python service
     const response = await axios.post(
-      process.env.PYTHON_EMAIL_SERVICE_URL, // The URL of your deployed Python app
+      `${process.env.PYTHON_EMAIL_SERVICE_URL.replace(/\/$/, '')}//send-welcome-email`, // The URL of your deployed Python app
       {
         // The JSON payload that the FastAPI service expects
         email: email,
