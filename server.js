@@ -266,7 +266,7 @@ app.post('/api/request-password-reset', async (req, res) => {
     if (process.env.PYTHON_EMAIL_SERVICE_URL) {
       await axios.post(
   `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-password-reset-email`,
-  { email, username: user.username, reset_url: resetUrl },
+  { email: user.email, username: user.username, reset_url: resetUrl },
   { headers: { 'x-internal-api-key': process.env.INTERNAL_API_KEY,
              'Content-Type': 'application/json',} }
 );
