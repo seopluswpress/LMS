@@ -14,14 +14,13 @@ const app = express();
 app.use(express.json());
 // Define the allowed origins for CORS
 const allowedOrigins = [
-  'http://localhost:3000', // Your local frontend
+  'http://localhost:3000',
   'http://localhost:5173',
-  'https://smb-lms.vercel.app' // IMPORTANT: Replace with your actual frontend URL when you deploy it
+  'https://smb-lms.vercel.app'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) === -1) {
@@ -41,15 +40,17 @@ app.use(cors({
 const userSchema = new mongoose.Schema({
   username: String,
   email: String,
-  //password: String,
   role: String,
-  courseInterest: { // This new field stores the user's preferred course category.
+  courseInterest: {
     type: String,
-    default: 'General' // A default value is good practice.
+    default: 'General'
   },
   courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
   resetPasswordToken: String,
   resetPasswordExpires: Date,
+  // OTP fields
+  otp: String,
+  otpExpires: Date,
 });
 
 
@@ -64,11 +65,11 @@ const courseSchema = new mongoose.Schema({
   sections: [sectionSchema],
   description: { type: String },
   is_published: { type: Boolean, default: false },
-  courseType: { // This new field will categorize the course.
+  courseType: {
     type: String,
-    required: true, // It's good practice to require a type.
-    trim: true,     // Removes any accidental whitespace from the start/end.
-    index: true,    // VERY IMPORTANT: Adds a database index for faster queries on this field.
+    required: true,
+    trim: true,
+    index: true,
   },
 });
 
@@ -101,114 +102,117 @@ const authMiddleware = async (req, res, next) => {
 };
 
 // ======================
-// Routes
+// Helper Functions
 // ======================
 
-
-
-// Register user // Make sure axios is imported at the top of your file
-
-// ... (keep all your other imports and schema definitions) ...
-
-
-// =========================================================================
-//  NEW HELPER FUNCTION TO CALL THE PYTHON EMAIL SERVICE
-// =========================================================================
-/**
- * A non-blocking function to trigger the external Python email service.
- * It includes robust error logging for easy debugging.
- * @param {string} email - The recipient's email address.
- * @param {string} username - The recipient's username.
- */
 async function triggerWelcomeEmail(email, username) {
-  // Check if the required environment variables are configured
   if (!process.env.PYTHON_EMAIL_SERVICE_URL || !process.env.INTERNAL_API_KEY) {
-    console.error('❌ Email service environment variables (PYTHON_EMAIL_SERVICE_URL or INTERNAL_API_KEY) are not set. Skipping email dispatch.');
+    console.error('❌ Email service environment variables not set. Skipping email dispatch.');
     return;
   }
 
   console.log(`➡️  Dispatching welcome email task to Python service for: ${email}`);
   
   try {
-    // Make a POST request to the Python service
     const response = await axios.post(
-      `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-welcome-email`, // The URL of your deployed Python app
+      `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-welcome-email`,
       {
-        // The JSON payload that the FastAPI service expects
         email: email,
         username: username,
       },
       {
-        // The headers, including the secret key for authentication
         headers: {
           'Content-Type': 'application/json',
           'x-internal-api-key': process.env.INTERNAL_API_KEY,
         },
-        // Set a reasonable timeout to prevent hanging requests
-        timeout: 10000, // 10 seconds
+        timeout: 10000,
       }
     );
     
     console.log(`✅ Python service accepted the email task for ${email}. Response:`, response.data.message);
 
   } catch (error) {
-    // This detailed error logging is crucial for figuring out what went wrong
     console.error(`❌❌ CRITICAL: Failed to dispatch email task for ${email}. Error:`, error.message);
     if (error.response) {
-      // The Python service responded with an error (e.g., 401 Unauthorized, 500 Server Error)
       console.error('Error Details from Python Service:', error.response.data);
       console.error('HTTP Status from Python Service:', error.response.status);
     } else if (error.request) {
-      // The request was made but no response was received (e.g., timeout, service is down)
       console.error('No response received from the email service. It might be down or unreachable.');
     } else {
-      // Something else went wrong in setting up the request
       console.error('Axios request setup error:', error.message);
     }
-    // We do NOT throw an error here, as user registration has already succeeded.
-    // This is a background task failure.
   }
 }
 
+// ======================
+// NEW: OTP Email Function
+// ======================
+async function sendOTPEmail(email, username, otp) {
+  if (!process.env.PYTHON_EMAIL_SERVICE_URL || !process.env.INTERNAL_API_KEY) {
+    console.error('❌ Email service environment variables not set. Cannot send OTP.');
+    return;
+  }
 
-// =========================================================================
-//  UPDATED USER REGISTRATION ROUTE
-// =========================================================================
+  console.log(`➡️  Dispatching OTP email to Python service for: ${email}`);
+  
+  try {
+    await axios.post(
+      `${process.env.PYTHON_EMAIL_SERVICE_URL}/send-otp-email`,
+      {
+        email: email,
+        username: username,
+        otp: otp,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-api-key': process.env.INTERNAL_API_KEY,
+        },
+        timeout: 10000,
+      }
+    );
+    
+    console.log(`✅ OTP email sent successfully to ${email}`);
 
+  } catch (error) {
+    console.error(`❌ Failed to send OTP email to ${email}. Error:`, error.message);
+    if (error.response) {
+      console.error('Error Details:', error.response.data);
+      console.error('HTTP Status:', error.response.status);
+    }
+  }
+}
+
+// ======================
+// Routes
+// ======================
+
+// Register user
 app.post('/api/register', async (req, res) => {
   try {
-    // Destructure the new `courseInterest` field from the request body.
     const { username, email, password, role, courseInterest } = req.body;
     console.log('📩 Incoming registration:', { username, email, role, courseInterest });
 
-    // Step 1: Check if user exists (Unchanged)
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       console.log('⚠️ User already exists:', email);
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Step 2: Hash password (Unchanged)
-    //const hashed = await bcrypt.hash(password, 10);
-
-    // Step 3: Create user in the database, now including `courseInterest`.
     const newUser = await User.create({
       username: username || email.split('@')[0],
       email,
-      //password: hashed,
       role: role || 'user',
-      courseInterest: courseInterest || 'General', // Save the interest or use a default.
+      courseInterest: courseInterest || 'General',
     });
     console.log('✅ User created in MongoDB:', newUser.email, 'with interest:', newUser.courseInterest);
 
-    // Step 4: Generate JWT token (Unchanged)
     const token = jwt.sign(
       { id: newUser._id, role: newUser.role },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Step 5: Respond to the client, now including `courseInterest` in the user object.
     res.status(201).json({
       message: 'User registered successfully',
       token,
@@ -217,12 +221,10 @@ app.post('/api/register', async (req, res) => {
         username: newUser.username, 
         email: newUser.email, 
         role: newUser.role, 
-        courseInterest: newUser.courseInterest // Include the new field in the response.
+        courseInterest: newUser.courseInterest
       },
     });
 
-    // --- POST-RESPONSE TASK ---
-    // Step 6: Trigger the welcome email via the Python service in the background. (Unchanged)
     triggerWelcomeEmail(newUser.email, newUser.username)
         .catch(err => {
             console.error("Non-blocking email dispatch process completed with an error.");
@@ -236,49 +238,135 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+// ======================
+// NEW: Request OTP for Login
+// ======================
+app.post('/api/request-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
 
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'User not found. Please register first.' });
+    }
 
-// Login user
-app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
-  if (!user) return res.status(400).send('Invalid credentials');
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store OTP with 5-minute expiration
+    user.otp = otp;
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    await user.save();
 
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) return res.status(400).send('Invalid credentials');
+    // Send OTP via email service
+    await sendOTPEmail(user.email, user.username, otp);
+    
+    // For development/testing (REMOVE IN PRODUCTION!)
+    console.log(`🔐 OTP for ${email}: ${otp}`);
 
-  const token = jwt.sign({ id: user._id,role: user.role,email: user.email},process.env.JWT_SECRET,{ expiresIn: '1h' });
-
-  res.json({ token });
+    res.json({ message: 'OTP sent to your email. Valid for 5 minutes.' });
+  } catch (error) {
+    console.error('Request OTP error:', error);
+    res.status(500).json({ message: 'An error occurred', error: error.message });
+  }
 });
 
-//Request password reset
+// ======================
+// UPDATED: Login with OTP (replaces password-based login)
+// ======================
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    
+    if (!email || !otp) {
+      return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Check if OTP exists
+    if (!user.otp || !user.otpExpires) {
+      return res.status(400).json({ message: 'No OTP requested. Please request OTP first.' });
+    }
+
+    // Check if OTP expired
+    if (Date.now() > user.otpExpires) {
+      return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
+    }
+
+    // Verify OTP
+    if (user.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP' });
+    }
+
+    // Clear OTP after successful verification
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    await user.save();
+
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is not defined in environment variables');
+      return res.status(500).json({ message: 'Server configuration error' });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        id: user._id,
+        role: user.role,
+        email: user.email
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    console.log(`✅ User ${email} logged in successfully with OTP`);
+
+    res.json({ 
+      token, 
+      message: 'Login successful',
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        courseInterest: user.courseInterest
+      }
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'An error occurred during login', error: error.message });
+  }
+});
+
+// Request password reset
 app.post('/api/request-password-reset', async (req, res) => {
   try {
     const { email } = req.body;
     const user = await User.findOne({ email });
 
     if (!user) {
-      // It's better not to reveal if an email exists for security reasons
       console.log(`⚠️ Password reset request for non-existent email: ${email}`);
       return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
     }
 
-    // Generate secure token
     const resetToken = crypto.randomBytes(32).toString('hex');
 
-    // Set token and expiry (1 hour)
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     await user.save();
 
-    // Construct reset URL
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
     console.log(`🔗 Password reset link for ${email}: ${resetUrl}`);
 
-    // --- START OF THE FIX ---
-    // Use the robust Python service call with detailed error logging
     if (process.env.PYTHON_EMAIL_SERVICE_URL && process.env.INTERNAL_API_KEY) {
       console.log(`➡️  Dispatching password reset email task to Python service for: ${email}`);
       try {
@@ -294,12 +382,11 @@ app.post('/api/request-password-reset', async (req, res) => {
               'Content-Type': 'application/json',
               'x-internal-api-key': process.env.INTERNAL_API_KEY
             },
-            timeout: 10000 // 10 seconds
+            timeout: 10000
           }
         );
         console.log(`✅ Python service accepted the password reset task for ${email}.`);
       } catch (error) {
-        // This is the CRITICAL part. It will tell you exactly what is wrong.
         console.error(`❌❌ CRITICAL: Failed to dispatch password reset email for ${email}. Error:`, error.message);
         if (error.response) {
           console.error('Error Details from Python Service:', error.response.data);
@@ -309,15 +396,11 @@ app.post('/api/request-password-reset', async (req, res) => {
         } else {
           console.error('Axios request setup error:', error.message);
         }
-        // We still continue and don't tell the user it failed for security.
       }
     } else {
       console.log('⚠️ No Python email service configured — email not sent.');
     }
-    // --- END OF THE FIX ---
 
-    // Send a generic success message regardless of whether the email dispatch worked
-    // to prevent user enumeration attacks.
     res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
 
   } catch (error) {
@@ -332,20 +415,17 @@ app.post('/api/reset-password/:token', async (req, res) => {
     const { token } = req.params;
     const { password } = req.body;
 
-    // Find user with valid token and unexpired time
     const user = await User.findOne({
       resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() }, // still valid
+      resetPasswordExpires: { $gt: Date.now() },
     });
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid or expired token.' });
     }
 
-    // Hash new password
     const hashed = await bcrypt.hash(password, 10);
 
-    // Update user password and clear token fields
     user.password = hashed;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
@@ -358,9 +438,6 @@ app.post('/api/reset-password/:token', async (req, res) => {
   }
 });
 
-
-
-// --- ADD THIS NEW ROUTE ---
 // Enroll in a course
 app.post('/api/enroll', authMiddleware, async (req, res) => {
   try {
@@ -371,13 +448,11 @@ app.post('/api/enroll', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Course ID is required.' });
     }
     
-    // Check if the course exists
     const course = await Course.findById(courseId);
     if (!course) {
       return res.status(404).json({ message: 'Course not found.' });
     }
 
-    // Check if user is already enrolled
     if (user.courses.includes(courseId)) {
       return res.status(400).json({ message: 'Already enrolled in this course.' });
     }
@@ -396,7 +471,7 @@ app.post('/api/enroll', authMiddleware, async (req, res) => {
 // Add course (admin)
 app.post('/api/courses', async (req, res) => {
   try {
-    console.log("Received body:", req.body); // Quick test
+    console.log("Received body:", req.body);
 
     const course = new Course(req.body);
     await course.save();
@@ -418,7 +493,6 @@ app.put('/api/courses/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Course not found' });
     }
 
-    // Optional: ensure only admin/educator can edit
     if (req.user.role !== 'admin' && req.user.role !== 'educator') {
       return res.status(403).json({ message: 'Permission denied' });
     }
@@ -435,45 +509,35 @@ app.put('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
-
-
 // List courses
 app.get('/api/courses', authMiddleware, async (req, res) => {
   const courses = await Course.find();
   res.json(courses);
 });
 
-
 // Secure video proxy endpoint
 app.get('/api/video/:courseId', authMiddleware, async (req, res) => {
   const course = await Course.findById(req.params.courseId);
   if (!course) return res.status(404).send('Course not found');
 
-  // Store user course history
   await CourseHistory.create({ user: req.user._id, course: course._id });
 
-  // Return the YouTube URL (or could fetch metadata)
   res.json({ url: course.youtubeUrl });
 });
 
-// User course history
 // User course history
 app.get('/api/history', authMiddleware, async (req, res) => {
   const history = await CourseHistory.find({ user: req.user._id }).populate('course');
   res.json(history);
 });
 
-// ADD THIS NEW ROUTE
-// Delete a course (assuming only creators/admins can do this)
+// Delete a course
 app.delete('/api/courses/:id', authMiddleware, async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
     if (!course) {
       return res.status(404).json({ message: 'Course not found' });
     }
-
-    // Optional: Add logic here to check if req.user is the creator of the course
-    // For now, we'll assume any authenticated user with access to this route can delete.
 
     await Course.findByIdAndDelete(req.params.id);
     res.json({ message: 'Course deleted successfully' });
@@ -483,12 +547,6 @@ app.delete('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/courses', authMiddleware, async (req, res) => {
-  const courses = await Course.find();
-  res.json(courses);
-});
-
-// --- ADD THIS NEW ROUTE ---
 // Get a single course by ID
 app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   try {
@@ -503,7 +561,7 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
-  app.patch('/api/courses/:id/publish', authMiddleware  , async (req, res) => {
+app.patch('/api/courses/:id/publish', authMiddleware, async (req, res) => {
   try {
     const { is_published } = req.body;
     
@@ -523,7 +581,7 @@ app.get('/api/courses/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.patch('/api/courses/:id/unpublish', authMiddleware  , async (req, res) => {
+app.patch('/api/courses/:id/unpublish', authMiddleware, async (req, res) => {
   try {
     const { is_published } = req.body;
     
@@ -543,12 +601,10 @@ app.patch('/api/courses/:id/unpublish', authMiddleware  , async (req, res) => {
   }
 });
 
-// --- User Routes ---
-//  NEW: Get all users (Admin only)
+// Get all users (Admin only)
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
-    // .select('-password') prevents the hashed password from being sent to the frontend
-    const users = await User.find().select('-password');
+    const users = await User.find().select('-password -otp');
     res.json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
