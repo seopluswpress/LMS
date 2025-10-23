@@ -43,6 +43,10 @@ const userSchema = new mongoose.Schema({
   email: String,
   password: String,
   role: String,
+  courseInterest: { // This new field stores the user's preferred course category.
+    type: String,
+    default: 'General' // A default value is good practice.
+  },
   courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
   resetPasswordToken: String,
   resetPasswordExpires: Date,
@@ -167,8 +171,9 @@ async function triggerWelcomeEmail(email, username) {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
-    console.log('📩 Incoming registration:', { username, email, role });
+    // Destructure the new `courseInterest` field from the request body.
+    const { username, email, password, role, courseInterest } = req.body;
+    console.log('📩 Incoming registration:', { username, email, role, courseInterest });
 
     // Step 1: Check if user exists (Unchanged)
     const existingUser = await User.findOne({ email });
@@ -180,14 +185,15 @@ app.post('/api/register', async (req, res) => {
     // Step 2: Hash password (Unchanged)
     const hashed = await bcrypt.hash(password, 10);
 
-    // Step 3: Create user in the database (Unchanged)
+    // Step 3: Create user in the database, now including `courseInterest`.
     const newUser = await User.create({
       username: username || email.split('@')[0],
       email,
       password: hashed,
       role: role || 'user',
+      courseInterest: courseInterest || 'General', // Save the interest or use a default.
     });
-    console.log('✅ User created in MongoDB:', newUser.email);
+    console.log('✅ User created in MongoDB:', newUser.email, 'with interest:', newUser.courseInterest);
 
     // Step 4: Generate JWT token (Unchanged)
     const token = jwt.sign(
@@ -196,22 +202,23 @@ app.post('/api/register', async (req, res) => {
       { expiresIn: '1h' }
     );
 
-    // Step 5: Respond to the client IMMEDIATELY. This makes the registration feel instant.
-    // We use status 201 "Created" which is more accurate for a registration.
+    // Step 5: Respond to the client, now including `courseInterest` in the user object.
     res.status(201).json({
       message: 'User registered successfully',
       token,
-      user: { id: newUser._id, username: newUser.username, email: newUser.email, role: newUser.role },
+      user: { 
+        id: newUser._id, 
+        username: newUser.username, 
+        email: newUser.email, 
+        role: newUser.role, 
+        courseInterest: newUser.courseInterest // Include the new field in the response.
+      },
     });
 
     // --- POST-RESPONSE TASK ---
-    // Step 6: Trigger the welcome email via the Python service in the background.
-    // We do NOT use `await` here. This is a "fire-and-forget" call.
-    // The .catch() prevents a potential unhandled promise rejection from crashing the server.
+    // Step 6: Trigger the welcome email via the Python service in the background. (Unchanged)
     triggerWelcomeEmail(newUser.email, newUser.username)
         .catch(err => {
-            // The error is already logged in detail inside the helper function.
-            // This just confirms the non-blocking task finished with an error.
             console.error("Non-blocking email dispatch process completed with an error.");
         });
 
