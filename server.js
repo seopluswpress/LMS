@@ -61,9 +61,15 @@ const sectionSchema = new mongoose.Schema({
 
 const courseSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  sections: [sectionSchema], // array of sections
-  description: { type: String }, // description for the whole course
+  sections: [sectionSchema],
+  description: { type: String },
   is_published: { type: Boolean, default: false },
+  courseType: { // This new field will categorize the course.
+    type: String,
+    required: true, // It's good practice to require a type.
+    trim: true,     // Removes any accidental whitespace from the start/end.
+    index: true,    // VERY IMPORTANT: Adds a database index for faster queries on this field.
+  },
 });
 
 const courseHistorySchema = new mongoose.Schema({
