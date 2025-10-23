@@ -41,7 +41,7 @@ app.use(cors({
 const userSchema = new mongoose.Schema({
   username: String,
   email: String,
-  password: String,
+  //password: String,
   role: String,
   courseInterest: { // This new field stores the user's preferred course category.
     type: String,
@@ -189,13 +189,13 @@ app.post('/api/register', async (req, res) => {
     }
 
     // Step 2: Hash password (Unchanged)
-    const hashed = await bcrypt.hash(password, 10);
+    //const hashed = await bcrypt.hash(password, 10);
 
     // Step 3: Create user in the database, now including `courseInterest`.
     const newUser = await User.create({
       username: username || email.split('@')[0],
       email,
-      password: hashed,
+      //password: hashed,
       role: role || 'user',
       courseInterest: courseInterest || 'General', // Save the interest or use a default.
     });
