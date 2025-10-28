@@ -16,7 +16,8 @@ app.use(express.json());
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://smb-lms.vercel.app'
+  'https://smb-lms.vercel.app',
+  'https://smbjugaad.com'
 ];
 
 app.use(cors({
